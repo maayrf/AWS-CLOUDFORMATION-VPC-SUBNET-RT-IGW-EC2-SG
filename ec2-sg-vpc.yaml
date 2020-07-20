@@ -1,303 +1,257 @@
 ---
-AWSTemplateFormatVersion: '2010-09-09'
-Description: VPC com 4 subredes. Em duas AvailabilityZones
 Parameters:
-  CorporateCidrIp:
-    Description: Ip que podera fazer SSH e RDP para a rede publica
+  SecurityGroupDescription:
+    Description: Security Group Description
     Type: String
-    Default: 0.0.0.0/0
-  VPCCidrIP:
-    Description: Rede do VPC (Essa rede deve abranger todas as subredes)
+
+  SecurityGroupTrustedSources:
+    Description: Digite 2 Ips Confiáveiss separados por ','
+    Type: CommaDelimitedList
+    Default: "x.x.x.x/32, x.x.x.x/32"
+  
+#  SubnetParametros:
+#    Description: Escolha as Subnets
+#    Type: AWS::EC2::Subnet::Id
+
+  VpcDescription:
+    Description: Nome da VPC
     Type: String
-    Default: 10.0.0.0/16
-  PublicSubnet1CidrIP:
-    Description: Subrede Publica 1 (deve estar dentro da rede VPC)
+  
+  VpcCIDR:
+    Description: Bloco CIDR
     Type: String
-    Default: 10.0.0.0/24
-  PublicSubnet2CidrIP:
-    Description: Subrede Publica 2 (deve estar dentro da rede VPC)
+
+  EC2Description:
+    Description: Nome da EC2
     Type: String
-    Default: 10.0.10.0/24
-  PrivateSubnet1CidrIP:
-    Description: Subrede Privada 1 (deve estar dentro da rede VPC)
-    Type: String
-    Default: 10.0.1.0/24
-  PrivateSubnet2CidrIP:
-    Description: Subrede Privada 2 (deve estar dentro da rede VPC)
-    Type: String
-    Default: 10.0.11.0/24
-  KeyName:
-    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+
+  EC2KeyPair:
+    Description: coloque o nome da chave para a EC2, lembre-se de criar a chave com o mesmo nome
     Type: AWS::EC2::KeyPair::KeyName
-    ConstraintDescription: must be the name of an existing EC2 KeyPair.
-  InstanceType:
-    Description: WebServer EC2 instance type
-    Type: String
-    Default: t2.micro
-    ConstraintDescription: must be a valid EC2 instance type.
-  SSHLocation:
-    Description: The IP address range that can be used to SSH to the EC2 instances
-    Type: String
-    MinLength: 9
-    MaxLength: 18
-    Default: 0.0.0.0/0
-    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
-    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
- 
-  LatestAmiId:
-    Type:  'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
-    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+
+  PrivSubnetIpBlocks: 
+    Description: "Coloque os CIDRs Privados até 3 CIDRs"
+    Type: CommaDelimitedList
+    Default: "x.x.2.x/24, x.x.4.x/24, x.x.6.x/24"
+  
+  PubSubnetIpBlocks: 
+    Description: "Coloque os CIDRs Publicos até 3 CIDRs"
+    Type: CommaDelimitedList
+    Default: "x.x.1.x/24, x.x.3.x/24, x.x.5.x/24"
+
 Resources:
-  VPC:
-    Type: AWS::EC2::VPC
+  MyInstance:
+    Type: AWS::EC2::Instance
     Properties:
-      CidrBlock:
-        Ref: VPCCidrIP
-  InternetGateway:
+      ImageId: ami-08f3d892de259504d #ami-081a078e835a9f751 # buscar o ID na região que for subir
+      InstanceType: t2.micro
+      KeyName: !Ref EC2KeyPair
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: 'true'
+          DeviceIndex: '0'        
+          GroupSet:
+          - Ref: SSHSecurityGroup
+          SubnetId: !Ref PubSubnet1
+      Tags:
+        -
+          Key: Name
+          Value: !Ref VpcDescription
+
+  myInternetGateway:
     Type: AWS::EC2::InternetGateway
-    Properties: {}
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Ref VpcDescription
+
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       VpcId:
-        Ref: VPC
-      InternetGatewayId:
-        Ref: InternetGateway
-  PublicSubnet1:
-    Type: AWS::EC2::Subnet
+       Ref: MyVPC
+      InternetGatewayId: !Ref myInternetGateway
+
+  # an elastic IP for our instance
+  MyEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: !Ref MyInstance
+
+  # our EC2 security group
+  SSHSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId:
-        Ref: VPC
-      CidrBlock:
-        Ref: PublicSubnet1CidrIP
-      AvailabilityZone:
-        Fn::Select:
-        - '0'
-        - Fn::GetAZs: ''
-  PublicSubnet2:
+        Ref: MyVPC
+      GroupName: !Ref SecurityGroupDescription
+      GroupDescription: !Ref SecurityGroupDescription
+      SecurityGroupIngress:
+      - CidrIp: !Select [0, !Ref SecurityGroupTrustedSources]
+        IpProtocol: -1
+      - CidrIp: !Select [1, !Ref SecurityGroupTrustedSources]
+        IpProtocol: -1        
+      Tags:
+        -
+          Key: Name
+          Value: !Ref SecurityGroupDescription
+# My VPC        
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: 'true'
+      EnableDnsSupport: 'true'
+      InstanceTenancy: 'default'
+      Tags:
+        -
+          Key: Name
+          Value: !Ref VpcDescription
+     
+
+# My Subnet
+  PrivSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId:
-        Ref: VPC
-      CidrBlock:
-        Ref: PublicSubnet2CidrIP
-      AvailabilityZone:
-        Fn::Select:
-        - '1'
-        - Fn::GetAZs: ''
-  PrivateSubnet1:
+      VpcId: !Ref MyVPC
+      CidrBlock: !Select [0, !Ref PrivSubnetIpBlocks]
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      Tags:
+        -
+          Key: Name
+          Value: 'subnet-priv-a' 
+  PrivSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: 
-        Ref: VPC
-      CidrBlock:
-        Ref: PrivateSubnet1CidrIP
-      AvailabilityZone:
-        Fn::Select:
-        - '0'
-        - Fn::GetAZs: ''
-  PrivateSubnet2:
+      VpcId: !Ref MyVPC
+      CidrBlock: !Select [1, !Ref PrivSubnetIpBlocks]
+      AvailabilityZone: !Select [ 1, !GetAZs ]
+      Tags:
+        -
+          Key: Name
+          Value: 'subnet-priv-b'
+  PrivSubnet3:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId:
-        Ref: VPC
-      CidrBlock:
-        Ref: PrivateSubnet2CidrIP
-      AvailabilityZone:
-        Fn::Select:
-        - '1'
-        - Fn::GetAZs: ''
-  PublicRouteTable:
-    Type: AWS::EC2::RouteTable
+      VpcId: !Ref MyVPC
+      CidrBlock: !Select [2, !Ref PrivSubnetIpBlocks]
+      AvailabilityZone: !Select [ 2, !GetAZs ]
+      Tags:
+        -
+          Key: Name
+          Value: 'subnet-priv-c'
+
+  PubSubnet1:
+    Type: AWS::EC2::Subnet
     Properties:
-      VpcId:
-        Ref: VPC
+      VpcId: !Ref MyVPC
+      CidrBlock: !Select [0, !Ref PubSubnetIpBlocks]
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      Tags:
+        -
+          Key: Name
+          Value: 'subnet-pub-a' 
+  PubSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: !Select [1, !Ref PubSubnetIpBlocks]
+      AvailabilityZone: !Select [ 1, !GetAZs ]
+      Tags:
+        -
+          Key: Name
+          Value: 'subnet-pub-b'
+  PubSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: !Select [2, !Ref PubSubnetIpBlocks]
+      AvailabilityZone: !Select [ 2, !GetAZs ]
+      Tags:
+        -
+          Key: Name
+          Value: 'subnet-pub-c'
+  # Routing Tables
+  # PRIVATE ROUTE
   PrivateRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId:
-        Ref: VPC
-  PublicRoute:
+      VpcId: !Ref MyVPC
+      Tags:
+      - Key: Name
+        Value: RT_Private
+  PrivateRoute1:   # Private route table direciona para o NAT:
     Type: AWS::EC2::Route
     Properties:
-      RouteTableId:
-        Ref: PublicRouteTable
+      RouteTableId: !Ref PrivateRouteTable
       DestinationCidrBlock: 0.0.0.0/0
-      GatewayId:
-        Ref: InternetGateway
-  PublicSubnetRouteTableAssociation1:
+      NatGatewayId: !Ref NATGateway
+
+  # NAT Gateway:
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt ElasticIPAddressForNAT.AllocationId
+      SubnetId: !Ref PubSubnet1
+      Tags:
+      - Key: Name
+        Value: 'NAT-GW'
+  ElasticIPAddressForNAT:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: VPC
+
+  # PUBLIC ROUTE TABLE
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+      - Key: Name
+        Value: RT_Public
+  PublicRoute1:   # Public route table direciona para o IGW:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref myInternetGateway
+  
+  # Attach the public subnets to public route tables,  
+  PublicSubnetARouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: PublicRouteTable
     Properties:
-      SubnetId:
-        Ref: PublicSubnet1
-      RouteTableId:
-        Ref: PublicRouteTable
-  PublicSubnetRouteTableAssociation2:
+      SubnetId: !Ref PubSubnet1
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetBRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: PublicRouteTable
     Properties:
-      SubnetId:
-        Ref: PublicSubnet2
-      RouteTableId:
-        Ref: PublicRouteTable
-  PrivateSubnetRouteTableAssociation1:
+      SubnetId: !Ref PubSubnet2
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetCRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: PublicRouteTable
     Properties:
-      SubnetId:
-        Ref: PrivateSubnet1
-      RouteTableId:
-        Ref: PrivateRouteTable
-  PrivateSubnetRouteTableAssociation2:
+      SubnetId: !Ref PubSubnet3
+      RouteTableId: !Ref PublicRouteTable
+
+ # Attach the private subnets to private route tables,   
+  PrivateSubnetARouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: PrivateRouteTable
     Properties:
-      SubnetId:
-        Ref: PrivateSubnet2
-      RouteTableId:
-        Ref: PrivateRouteTable
-  PublicSubnetAcl:
-    Type: AWS::EC2::NetworkAcl
+      SubnetId: !Ref PrivSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: PrivateRouteTable
     Properties:
-      VpcId:
-        Ref: VPC
-  PrivateSubnetAcl:
-    Type: AWS::EC2::NetworkAcl
+      SubnetId: !Ref PrivSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateSubnetCRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: PrivateRouteTable
     Properties:
-      VpcId:
-        Ref: VPC
-  PublicInSubnetAclEntry:
-    Type: AWS::EC2::NetworkAclEntry
-    Properties:
-      NetworkAclId:
-        Ref: PublicSubnetAcl
-      RuleNumber: '32000'
-      Protocol: "-1"
-      RuleAction: allow
-      Egress: 'false'
-      CidrBlock: 0.0.0.0/0
-      Icmp:
-        Code: "-1"
-        Type: "-1"
-      PortRange:
-        From: '1'
-        To: '65535'
-  PublicOutSubnetAclEntry:
-    Type: AWS::EC2::NetworkAclEntry
-    Properties:
-      NetworkAclId:
-        Ref: PublicSubnetAcl
-      RuleNumber: '32000'
-      Protocol: "-1"
-      RuleAction: allow
-      Egress: 'true'
-      CidrBlock: 0.0.0.0/0
-      Icmp:
-        Code: "-1"
-        Type: "-1"
-      PortRange:
-        From: '1'
-        To: '65535'
-  PrivateInSubnetAclEntry:
-    Type: AWS::EC2::NetworkAclEntry
-    Properties:
-      NetworkAclId:
-        Ref: PrivateSubnetAcl
-      RuleNumber: '32000'
-      Protocol: "-1"
-      RuleAction: allow
-      Egress: 'false'
-      CidrBlock: 0.0.0.0/0
-      Icmp:
-        Code: "-1"
-        Type: "-1"
-      PortRange:
-        From: '1'
-        To: '65535'
-  PrivateOutSubnetAclEntry:
-    Type: AWS::EC2::NetworkAclEntry
-    Properties:
-      NetworkAclId:
-        Ref: PrivateSubnetAcl
-      RuleNumber: '32000'
-      Protocol: "-1"
-      RuleAction: allow
-      Egress: 'true'
-      CidrBlock: 0.0.0.0/0
-      Icmp:
-        Code: "-1"
-        Type: "-1"
-      PortRange:
-        From: '1'
-        To: '65535'
-  PublicSubnetAclAssociation1:
-    Type: AWS::EC2::SubnetNetworkAclAssociation
-    Properties:
-      SubnetId:
-        Ref: PublicSubnet1
-      NetworkAclId:
-        Ref: PublicSubnetAcl
-  PublicSubnetAclAssociation2:
-    Type: AWS::EC2::SubnetNetworkAclAssociation
-    Properties:
-      SubnetId:
-        Ref: PublicSubnet2
-      NetworkAclId:
-        Ref: PublicSubnetAcl
-  PrivateSubnetAclAssociation1:
-    Type: AWS::EC2::SubnetNetworkAclAssociation
-    Properties:
-      SubnetId:
-        Ref: PrivateSubnet1
-      NetworkAclId:
-        Ref: PrivateSubnetAcl
-  PrivateSubnetAclAssociation2:
-    Type: AWS::EC2::SubnetNetworkAclAssociation
-    Properties:
-      SubnetId:
-        Ref: PrivateSubnet2
-      NetworkAclId:
-        Ref: PrivateSubnetAcl
-  EC2Instance:
-    Type: AWS::EC2::Instance
-    Properties:
-      InstanceType: !Ref 'InstanceType'
-      SecurityGroups: [!Ref 'InstanceSecurityGroup']
-      KeyName: !Ref 'KeyName'
-      ImageId: !Ref 'LatestAmiId'
-  InstanceSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Enable SSH and HTTP access
-      SecurityGroupIngress:
-      - IpProtocol: tcp
-        FromPort: 22
-        ToPort: 22
-        CidrIp: !Ref 'SSHLocation'
-Outputs:
-  VPC:
-    Description: VPC
-    Value:
-      Ref: VPC
-  PublicSubnets:
-    Description: Public Subnets
-    Value:
-      Fn::Join:
-      - ''
-      - - Ref: PublicSubnet1
-        - ", "
-        - Ref: PublicSubnet2
-  PrivateSubnets:
-    Description: Private Subnets
-    Value:
-      Fn::Join:
-      - ''
-      - - Ref: PrivateSubnet1
-        - ", "
-        - Ref: PrivateSubnet2
-  InstanceId:
-    Description: InstanceId of the newly created EC2 instance
-    Value: !Ref 'EC2Instance'
-  AZ:
-    Description: Availability Zone of the newly created EC2 instance
-    Value: !GetAtt [EC2Instance, AvailabilityZone]
-  PublicIP:
-    Description: Public IP address of the newly created EC2 instance
-    Value: !GetAtt [EC2Instance, PublicIp]
+      SubnetId: !Ref PrivSubnet3
+      RouteTableId: !Ref PrivateRouteTable
